@@ -1,22 +1,24 @@
 def call(Map config = [:]) {
     // Mandatory parameters
-    def awsRegion = config.awsRegion ?: error("Parameter 'awsRegion' is required.")
-    def ecrRepository = config.ecrRepository ?: error("Parameter 'ecrRepository' is required.")
+    def ghcrRepository = config.ghcrRepository ?: error("Parameter 'ghcrRepository' is required.")
     def dockerfilePath = config.dockerfilePath ?: '.'
     def imageTag = config.imageTag ?: 'latest'
+    def ghcrUsername = credentials('github-username') // Replace with Jenkins credential ID for GitHub username
+    def ghcrToken = credentials('github-token')       // Replace with Jenkins credential ID for GitHub token
 
     pipeline {
         agent any
         environment {
-            AWS_REGION = awsRegion
+            GHCR_USERNAME = ghcrUsername
+            GHCR_TOKEN = ghcrToken
         }
         stages {
-            stage('Login to ECR') {
+            stage('Login to GHCR') {
                 steps {
                     script {
-                        echo "Logging into AWS ECR"
+                        echo "Logging into GitHub Container Registry (GHCR)"
                         sh """
-                            aws ecr get-login-password --region ${AWS_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
                         """
                     }
                 }
@@ -26,27 +28,17 @@ def call(Map config = [:]) {
                     script {
                         echo "Building Docker Image"
                         sh """
-                            docker build -t ${ecrRepository}:${imageTag} ${dockerfilePath}
+                            docker build -t ghcr.io/${GHCR_USERNAME}/${ghcrRepository}:${imageTag} ${dockerfilePath}
                         """
                     }
                 }
             }
-            stage('Tag Docker Image') {
+            stage('Push Docker Image to GHCR') {
                 steps {
                     script {
-                        echo "Tagging Docker Image"
+                        echo "Pushing Docker Image to GHCR"
                         sh """
-                            docker tag ${ecrRepository}:${imageTag} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ecrRepository}:${imageTag}
-                        """
-                    }
-                }
-            }
-            stage('Push Docker Image to ECR') {
-                steps {
-                    script {
-                        echo "Pushing Docker Image to ECR"
-                        sh """
-                            docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ecrRepository}:${imageTag}
+                            docker push ghcr.io/${GHCR_USERNAME}/${ghcrRepository}:${imageTag}
                         """
                     }
                 }
